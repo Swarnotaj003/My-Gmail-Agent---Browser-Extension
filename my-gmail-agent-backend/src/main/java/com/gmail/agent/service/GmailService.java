@@ -75,6 +75,54 @@ public class GmailService {
         return reply;
     }
 
+    public String generateSummary(Gmail gmail, String style) {
+        if (!validateMailInput(gmail)) {
+            log.warn("generateSummary() called with invalid input: Gmail object is null or empty subject/content!");
+            throw new IllegalArgumentException("Subject & content cannot be null or empty");
+        }
+
+        String template = """
+        Summarize the following email content clearly and concisely.
+        Provide a {style} style summary that captures the key points without extra details.
+        Subject: {subject}
+        Content: {content}
+        Style can be one of the following:
+        SHORT: Generate a 1–2 sentence summary capturing only the main intent of the email.
+        BULLET POINTS: Summarize key information in form a list of bullet points highlighting actions, deadlines, and decisions.
+        DETAILED: Produce a comprehensive summary covering context, important details, and next steps in a paragraph of upto 100 words.
+        """;
+
+        log.info("Generating '{}' style summary for the email with subject: {}", style, gmail.getSubject());
+
+        String summary = "";
+        try {
+            long startTime = System.currentTimeMillis();
+
+            String response = chatClient.prompt()
+                    .user(u -> {
+                        u.text(template);
+                        u.params(Map.of(
+                                "subject", gmail.getSubject(),
+                                "content", gmail.getContent(),
+                                "style", style
+                        ));
+                    })
+                    .call()
+                    .content();
+
+            summary = response != null ? response : "";
+            long duration = System.currentTimeMillis() - startTime;
+
+            log.info("Summary generated successfully!");
+            log.info("Summary length: {} chars, Time taken: {} ms", summary.length(), duration);
+        } catch (Exception e) {
+            log.warn("Error in generating summary! Message: {}", e.getMessage());
+            throw e;
+        }
+
+        return summary;
+    }
+
     private boolean validateMailInput(Gmail gmail) {
         return gmail != null && gmail.getSubject() != null && !gmail.getSubject().isEmpty()
                 && gmail.getContent() != null && !gmail.getContent().isEmpty();

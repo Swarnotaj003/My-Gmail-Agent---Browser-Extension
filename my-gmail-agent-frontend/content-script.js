@@ -266,7 +266,7 @@
           <section class="myga-section">
             <h2 class="myga-section-title">Generate reply</h2>
             <p class="myga-section-desc">
-              Draft a context-aware reply for the email you're reading. The email content will be automatically scanned.
+              Draft a context-aware reply for the email you're reading. Keep reply compose box open.
             </p>
             <div class="myga-field-group">
               <label class="myga-label">Desired tone</label>
@@ -284,6 +284,25 @@
               Generate reply
             </button>
           </section>
+
+          <section class="myga-section">
+            <h2 class="myga-section-title">Summarize thread</h2>
+            <p class="myga-section-desc">
+              Get a quick AI-generated summary of this email thread.
+            </p>
+            <div class="myga-field-group">
+              <label class="myga-label">Summary style</label>
+              <div class="myga-chip-row" id="myga-summary-style-selector">
+                <button class="myga-chip myga-chip--selected" type="button" data-style="Short">Short</button>
+                <button class="myga-chip" type="button" data-style="BulletPoints">Bullet points</button>
+                <button class="myga-chip" type="button" data-style="Detailed">Detailed</button>
+              </div>
+            </div>
+            <button class="myga-primary-button" type="button" id="myga-summarize-button">
+              Summarize thread
+            </button>
+          </section>
+
         </div>
       `;
     } else {
@@ -332,10 +351,23 @@
         target.classList.add("myga-chip--selected");
       }
 
+      //Handle summary style selection
+      if (target.classList.contains("myga-chip") && target.dataset.style) {
+        const styleButtons = document.querySelectorAll("#myga-summary-style-selector .myga-chip");
+        styleButtons.forEach((btn) => btn.classList.remove("myga-chip--selected"));
+        target.classList.add("myga-chip--selected");
+      }
+
       // Handle generate reply button
       if (target.id === "myga-generate-button") {
         handleGenerateReply();
       }
+
+      // Handle summarize thread button
+      if (target.id === "myga-summarize-button") {
+        handleSummarizeThread();
+      }
+
     });
 
     document.body.appendChild(sidebar);
@@ -437,6 +469,137 @@
 
     sidebar.classList.add("myga-hidden");
     fab.classList.remove("myga-fab--active");
+  }
+
+  // ===== Summary feature (new) =====
+
+  // Extract full thread text for summarization
+  function extractThreadText() {
+    // Gmail renders message bodies inside elements with class .a3s
+    const bodies = Array.from(document.querySelectorAll('.a3s'))
+      .map(div => (div.innerText || "").trim())
+      .filter(Boolean);
+
+    const fullText = bodies.join("\n\n").trim();
+    return fullText;
+  }
+
+  // Call background to summarize (avoids CORS)
+  async function callSummarizeAPI(threadText) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (typeof chrome === 'undefined' || !chrome.runtime) {
+          reject(new Error("Chrome runtime is not available. Extension may not be properly initialized."));
+          return;
+        }
+
+        chrome.runtime.sendMessage(
+          { action: "summarizeEmail", emailContent: threadText },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              console.error("Chrome runtime error:", chrome.runtime.lastError);
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (!response) {
+              reject(new Error("No response from background script."));
+              return;
+            }
+            if (response.success) {
+              resolve(response.summary);
+            } else {
+              reject(new Error(response.error || "Unknown error from background script."));
+            }
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  // Render summary in a floating box (non-intrusive)
+  function showSummaryOutput(summaryText) {
+    const existingBox = document.getElementById('summary-output-box');
+    if (existingBox) existingBox.remove();
+
+    const outputBox = document.createElement('div');
+    outputBox.id = 'summary-output-box';
+    outputBox.className = 'myga-summary-box';
+
+    outputBox.style.position = 'fixed';
+    outputBox.style.bottom = '20px';
+    outputBox.style.right = '20px';
+    outputBox.style.background = '#fff';
+    outputBox.style.border = '1px solid #ccc';
+    outputBox.style.padding = '12px';
+    outputBox.style.zIndex = '9999';
+    outputBox.style.maxWidth = '420px';
+    outputBox.style.maxHeight = '50vh';
+    outputBox.style.overflow = 'auto';
+    outputBox.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
+    outputBox.style.fontSize = '13px';
+    outputBox.style.lineHeight = '1.4';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '600';
+    title.style.marginBottom = '8px';
+    title.textContent = 'Thread summary';
+
+    const content = document.createElement('div');
+    content.textContent = summaryText;
+
+    const close = document.createElement('button');
+    close.textContent = 'Close';
+    close.style.marginTop = '10px';
+    close.style.background = '#f1f3f4';
+    close.style.border = '1px solid #dadce0';
+    close.style.padding = '6px 10px';
+    close.style.borderRadius = '4px';
+    close.style.cursor = 'pointer';
+    close.addEventListener('click', () => outputBox.remove());
+
+    outputBox.appendChild(title);
+    outputBox.appendChild(content);
+    outputBox.appendChild(close);
+
+    document.body.appendChild(outputBox);
+  }
+
+  // Handler for summarize action
+  async function handleSummarizeThread() {
+    try {
+      showStatusMessage("Collecting thread content...", "info");
+
+      const text = extractThreadText();
+      if (!text) {
+        showStatusMessage("No email content found in this thread.", "error");
+        return;
+      }
+
+      // Step 1: Collect selected summary style (Short, BulletPoints, Detailed)
+      const selectedStyleButton = document.querySelector("#myga-summary-style-selector .myga-chip--selected");
+      const style = selectedStyleButton ? selectedStyleButton.dataset.style : "Short";
+
+      showStatusMessage("Summarizing thread...", "info");
+
+      // Step 2: Send to background with style
+      const summary = await callSummarizeAPI(text, style);
+
+      //Step 3: Display Summary
+      showSummaryOutput(summary);
+      showStatusMessage("✓ Summary generated successfully!", "success");
+
+    } catch (error) {
+      console.error("Summarize thread error:", error);
+      let errorMessage = error.message;
+
+      if (error.message.includes("Failed to connect")) {
+        errorMessage = "Backend server is not running. Please start the backend at http://localhost:8080";
+      }
+
+      showStatusMessage(`Error: ${errorMessage}`, "error");
+    }
   }
 
   // Gmail is an SPA; run on initial load and when the URL changes
