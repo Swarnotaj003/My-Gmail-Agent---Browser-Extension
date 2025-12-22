@@ -13,10 +13,21 @@
     const url = window.location.href;
     
     // Check if we're viewing a thread (email is open)
-    // Gmail thread URL pattern: #inbox/[threadId] where threadId is alphanumeric
+    // Gmail thread URL patterns: 
+    // - #inbox/[threadId]
+    // - #starred/[threadId]
+    // - #sent/[threadId]
+    // - #snoozed/[threadId]
+    // - #category/label/[threadId]
+    // - #imp/[threadId]
+    // - #scheduled/[threadId]
+    // - #all/[threadId]
+    // - #spam/[threadId]
+    // - #trash/[threadId]
+    // Thread IDs are typically 30+ alphanumeric characters
     
-    const threadMatch = url.match(/#inbox\/([A-Za-z0-9]+)$/);
-    if (threadMatch && threadMatch[1]) {
+    const threadMatch = url.match(/#[^/]+\/[A-Za-z0-9]{20,}$|#[^/]+\/[^/]+\/[A-Za-z0-9]{20,}$/);
+    if (threadMatch && !url.includes("#drafts/")) {
       return "thread";
     }
     
@@ -25,7 +36,7 @@
       return "inbox";
     }
     
-    // Otherwise, we're in inbox view
+    // Otherwise, we're in inbox/list view (including drafts)
     return "inbox";
   }
 
@@ -216,6 +227,18 @@
   function initWhenGmailReady() {
     // Only run on Gmail
     if (!/mail\.google\.com$/.test(window.location.hostname)) return;
+
+    const url = window.location.href;
+    
+    // Skip initialization on settings, labels management, subscriptions, and other management pages
+    if (url.includes("#settings") || url.includes("#help") || url.includes("#sub")) {
+      // Remove UI if it exists on these pages
+      const oldSidebar = document.getElementById(SIDEBAR_ID);
+      const oldFab = document.getElementById(FAB_ID);
+      if (oldSidebar) oldSidebar.remove();
+      if (oldFab) oldFab.remove();
+      return;
+    }
 
     // Remove old UI if exists (for context switching)
     const oldSidebar = document.getElementById(SIDEBAR_ID);
@@ -534,7 +557,7 @@
     outputBox.style.background = '#fff';
     outputBox.style.border = '1px solid #ccc';
     outputBox.style.padding = '12px';
-    outputBox.style.zIndex = '9999';
+    outputBox.style.zIndex = '2147483642';
     outputBox.style.maxWidth = '420px';
     outputBox.style.maxHeight = '50vh';
     outputBox.style.overflow = 'auto';

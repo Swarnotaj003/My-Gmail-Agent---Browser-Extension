@@ -21,58 +21,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Additional handler for summarization
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // ✅ Handle reply generation
-  if (request.action === "generateReply") {
-    const { emailData, tone } = request;
-
-    fetch(
-      `${BASE_URL}/reply?tone=${encodeURIComponent(tone)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailData),
-      }
-    )
-      .then((res) => res.text())
-      .then((data) => {
-        sendResponse({ success: true, reply: data });
-      })
-      .catch((err) => {
-        console.error("Backend reply error:", err);
-        sendResponse({ success: false, error: err.message });
-      });
-
-    return true; // keep channel open
-  }
-
   // ✅ Handle summarization
   if (request.action === "summarizeEmail") {
-    const { emailContent, style, subject } = request;
-    const summaryStyle = style || "Short";
-    const subjectText = subject || "Thread Summary";
-
-    fetch(
-      `${BASE_URL}/summary?style=${encodeURIComponent(summaryStyle)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          subject: subjectText,
-          content: emailContent,
-        }),
-      }
-    )
-      .then((res) => res.text())
-      .then((data) => {
-        sendResponse({ success: true, summary: data });
+    summarizeEmail(request.emailContent, request.style, request.subject)
+      .then((summary) => {
+        console.log("Summary generated successfully");
+        sendResponse({ success: true, summary });
       })
-      .catch((err) => {
-        console.error("Backend summarize error:", err);
-        sendResponse({ success: false, error: err.message });
+      .catch((error) => {
+        console.error("Error generating summary:", error);
+        sendResponse({ success: false, error: error.message });
       });
-
-    return true; // keep channel open
+    return true; // Will respond asynchronously
   }
 });
 
@@ -116,15 +78,17 @@ async function generateReply(emailData, tone) {
       console.error("API returned error:", status, errorText);
 
       if (status === 429) {
-        throw new Error("API rate limit exceeded. Please try again later.");
+        throw new Error("429 - API rate limit exceeded. Please try again later.");
+      } else if (status === 503) {
+        throw new Error("503 - AI service is temporarily unavailable. Please try again later.");
       } else if (status === 400) {
         throw new Error(
-          "Invalid email content. Please ensure the email has both subject and content."
+          "400 - Invalid email content. Please ensure the email has both subject and content."
         );
       } else if (status === 500) {
-        throw new Error("Server error. Please try again later.");
+        throw new Error("500 - Server error. Please try again later.");
       } else {
-        throw new Error(`API error (${status}): ${errorText}`);
+        throw new Error(`${status} - API error: ${errorText}`);
       }
     }
 
@@ -153,16 +117,21 @@ async function generateReply(emailData, tone) {
 }
 
 // Re-enabled summarize function
-async function summarizeEmail(emailContent) {
+async function summarizeEmail(emailContent, style, subject) {
   try {
     console.log("Starting API call for summarization...");
     console.log("Base URL:", BASE_URL);
     console.log("Email content length:", emailContent.length);
 
-    const url = `${BASE_URL}/summary`; // endpoint for summarization
+    const summaryStyle = style || "Short";
+    const subjectText = subject || "Thread Summary";
+    const url = `${BASE_URL}/summary?style=${encodeURIComponent(summaryStyle)}`; // endpoint for summarization
     console.log("Full URL:", url);
 
-    const requestBody = { text: emailContent };
+    const requestBody = { 
+      subject: subjectText,
+      content: emailContent 
+    };
     console.log(
       "Request body:",
       JSON.stringify(requestBody).substring(0, 200) + "..."
@@ -185,15 +154,17 @@ async function summarizeEmail(emailContent) {
       console.error("API returned error:", status, errorText);
 
       if (status === 429) {
-        throw new Error("API rate limit exceeded. Please try again later.");
+        throw new Error("429 - API rate limit exceeded. Please try again later.");
+      } else if (status === 503) {
+        throw new Error("503 - AI service is temporarily unavailable. Please try again later.");
       } else if (status === 400) {
         throw new Error(
-          "Invalid email content. Please ensure the email body is not empty."
+          "400 - Invalid email content. Please ensure the email body is not empty."
         );
       } else if (status === 500) {
-        throw new Error("Server error. Please try again later.");
+        throw new Error("500 - Server error. Please try again later.");
       } else {
-        throw new Error(`API error (${status}): ${errorText}`);
+        throw new Error(`${status} - API error: ${errorText}`);
       }
     }
 

@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@CrossOrigin(origins = "chrome-extension://bfpckohipmchjpolgddkbojmbgcckhld")
+@CrossOrigin(origins = "${chrome.extension.origin}")
 @RequestMapping("/api/v1/agent")
 public class GmailController {
     private final GmailService gmailService;
