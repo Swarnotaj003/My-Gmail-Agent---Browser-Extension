@@ -82,14 +82,14 @@ public class GmailService {
         }
 
         String template = """
-        Summarize the following email content clearly and concisely.
+        Summarize the following email content clearly and concisely. Don't include any verbose messages.
         Provide a {style} style summary that captures the key points without extra details.
         Subject: {subject}
         Content: {content}
         Style can be one of the following:
-        SHORT: Generate a 1–2 sentence summary capturing only the main intent of the email.
-        BULLET POINTS: Summarize key information in form a list of bullet points highlighting actions, deadlines, and decisions.
-        DETAILED: Produce a comprehensive summary covering context, important details, and next steps in a paragraph of upto 100 words.
+        - SHORT: Write a 1–2 sentence summary (maximum 40 words) that captures only the primary purpose or intent of the email.
+        - BULLET POINTS: Provide a concise bullet-point list highlighting key actions, deadlines, requests, and decisions.
+        - DETAILED: Write a well-structured paragraph (maximum 100 words) that includes context, important details, and any next steps.
         """;
 
         log.info("Generating '{}' style summary for the email with subject: {}", style, gmail.getSubject());

@@ -485,7 +485,7 @@
   }
 
   // Call background to summarize (avoids CORS)
-  async function callSummarizeAPI(threadText) {
+  async function callSummarizeAPI(threadText, style, subject) {
     return new Promise((resolve, reject) => {
       try {
         if (typeof chrome === 'undefined' || !chrome.runtime) {
@@ -493,8 +493,9 @@
           return;
         }
 
+        // include selected style and subject in the message so background can pass them to the backend
         chrome.runtime.sendMessage(
-          { action: "summarizeEmail", emailContent: threadText },
+          { action: "summarizeEmail", emailContent: threadText, style: style, subject: subject },
           (response) => {
             if (chrome.runtime.lastError) {
               console.error("Chrome runtime error:", chrome.runtime.lastError);
@@ -583,8 +584,11 @@
 
       showStatusMessage("Summarizing thread...", "info");
 
-      // Step 2: Send to background with style
-      const summary = await callSummarizeAPI(text, style);
+      // Step 2: Determine subject and send to background with style
+      const emailMeta = extractEmailContent();
+      const subject = (emailMeta && emailMeta.subject) ? emailMeta.subject : "Thread summary";
+
+      const summary = await callSummarizeAPI(text, style, subject);
 
       //Step 3: Display Summary
       showSummaryOutput(summary);

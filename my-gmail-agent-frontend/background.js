@@ -27,7 +27,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { emailData, tone } = request;
 
     fetch(
-      `http://localhost:8080/api/v1/agent/reply?tone=${encodeURIComponent(tone)}`,
+      `${BASE_URL}/reply?tone=${encodeURIComponent(tone)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,16 +48,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // ✅ Handle summarization
   if (request.action === "summarizeEmail") {
-    const { emailContent, style } = request;
+    const { emailContent, style, subject } = request;
     const summaryStyle = style || "Short";
+    const subjectText = subject || "Thread Summary";
 
     fetch(
-      `http://localhost:8080/api/v1/agent/summary?style=${encodeURIComponent(summaryStyle)}`,
+      `${BASE_URL}/summary?style=${encodeURIComponent(summaryStyle)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          subject: "Thread Summary",
+          subject: subjectText,
           content: emailContent,
         }),
       }
@@ -143,7 +144,7 @@ async function generateReply(emailData, tone) {
     // Add helpful diagnostic message
     if (error.message === "Failed to fetch") {
       throw new Error(
-        "Failed to connect to backend. Make sure the backend server is running on http://localhost:8080"
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
       );
     }
     
@@ -215,7 +216,7 @@ async function summarizeEmail(emailContent) {
     // Add helpful diagnostic message
     if (error.message === "Failed to fetch") {
       throw new Error(
-        "Failed to connect to backend. Make sure the backend server is running on http://localhost:8080"
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
       );
     }
 
