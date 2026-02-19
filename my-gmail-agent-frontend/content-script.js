@@ -61,6 +61,36 @@
         subject = headingElement ? headingElement.textContent : "";
       }
 
+      // ROOT EMAIL CONTAINER
+      const mail = document.querySelector('.adn.ads'); 
+      if (!mail) return;
+
+      // FROM (sender)
+      let fromAddress = "";
+      const fromEl = mail.querySelector('.gD[email]');
+      if (fromEl) {
+        fromAddress = fromEl.getAttribute('email');
+      }
+
+      // TO recipients
+      let toAddress = [];
+      const toEls = mail.querySelectorAll('.g2[email]');
+      toEls.forEach(el => {
+        toAddress.push(el.getAttribute('email'));
+      });
+
+      // fallback: search any mailto links
+      if (!fromAddress) {
+        const mailto = mail.querySelector('a[href^="mailto:"]');
+        if (mailto) {
+          fromAddress = mailto.href.replace('mailto:', '').trim();
+        }
+      }
+
+      console.log("FROM:", fromAddress);
+      console.log("TO:", toAddress);
+
+
       // Find email content - Gmail stores message content in specific containers
       let content = "";
       const messageBody = emailBody.querySelector('[data-message-id]') || emailBody.querySelector('.aO.T-I-J3');
@@ -74,13 +104,17 @@
       // Clean up content
       subject = subject.trim();
       content = content.trim().substring(0, 2000); // Limit to 2000 chars to avoid token limits
+      fromAddress = fromAddress.trim();
+      toAddress = toAddress.join(", ").trim();
 
       if (!subject || !content) {
         console.warn("Subject or content is empty. Subject:", subject, "Content length:", content.length);
         return null;
       }
 
-      return { subject, content };
+      console.log("Extracted email addresses - From:", fromAddress, "To:", toAddress);
+
+      return { subject, content, fromAddress, toAddress };
     } catch (error) {
       console.error("Error extracting email content:", error);
       return null;
@@ -508,7 +542,7 @@
   }
 
   // Call background to summarize (avoids CORS)
-  async function callSummarizeAPI(threadText, style, subject) {
+  async function callSummarizeAPI(threadText, style, subject, fromAddress, toAddress) {
     return new Promise((resolve, reject) => {
       try {
         if (typeof chrome === 'undefined' || !chrome.runtime) {
@@ -518,7 +552,7 @@
 
         // include selected style and subject in the message so background can pass them to the backend
         chrome.runtime.sendMessage(
-          { action: "summarizeEmail", emailContent: threadText, style: style, subject: subject },
+          { action: "summarizeEmail", emailContent: threadText, style: style, subject: subject, fromAddress: fromAddress, toAddress: toAddress },
           (response) => {
             if (chrome.runtime.lastError) {
               console.error("Chrome runtime error:", chrome.runtime.lastError);
@@ -610,8 +644,10 @@
       // Step 2: Determine subject and send to background with style
       const emailMeta = extractEmailContent();
       const subject = (emailMeta && emailMeta.subject) ? emailMeta.subject : "Thread summary";
+      const fromAddress = (emailMeta && emailMeta.fromAddress) ? emailMeta.fromAddress : "";
+      const toAddress = (emailMeta && emailMeta.toAddress) ? emailMeta.toAddress : "";
 
-      const summary = await callSummarizeAPI(text, style, subject);
+      const summary = await callSummarizeAPI(text, style, subject, fromAddress, toAddress);
 
       //Step 3: Display Summary
       showSummaryOutput(summary);

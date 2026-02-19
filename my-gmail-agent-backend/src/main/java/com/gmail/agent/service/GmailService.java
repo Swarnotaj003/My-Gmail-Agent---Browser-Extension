@@ -44,7 +44,8 @@ public class GmailService {
             Content: {content}
             Maintain a {tone} tone in the reply.
         """;
-        log.info("Generating reply for the email with subject: {}", gmail.getSubject());
+        log.info("Generating '{}' reply for the email with subject: {}", tone, gmail.getSubject());
+        log.info("From: {}, To : {}", gmail.getFromAddress(), gmail.getToAddress());
 
         // call the model with prompt template
         String reply = "";

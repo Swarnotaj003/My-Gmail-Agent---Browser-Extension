@@ -25,7 +25,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // ✅ Handle summarization
   if (request.action === "summarizeEmail") {
-    summarizeEmail(request.emailContent, request.style, request.subject)
+    summarizeEmail(request.emailContent, request.style, request.subject, request.fromAddress, request.toAddress)
       .then((summary) => {
         console.log("Summary generated successfully");
         sendResponse({ success: true, summary });
@@ -53,8 +53,8 @@ async function generateReply(emailData, tone) {
     const requestBody = {
       subject: emailData.subject,
       content: emailData.content,
-      fromAddress: "",
-      toAddress: "",
+      fromAddress: emailData.fromAddress || "",
+      toAddress: emailData.toAddress || "",
     };
     
     console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
@@ -117,7 +117,7 @@ async function generateReply(emailData, tone) {
 }
 
 // Re-enabled summarize function
-async function summarizeEmail(emailContent, style, subject) {
+async function summarizeEmail(emailContent, style, subject, fromAddress, toAddress) {
   try {
     console.log("Starting API call for summarization...");
     console.log("Base URL:", BASE_URL);
@@ -130,7 +130,9 @@ async function summarizeEmail(emailContent, style, subject) {
 
     const requestBody = { 
       subject: subjectText,
-      content: emailContent 
+      content: emailContent,
+      fromAddress: fromAddress || "",
+      toAddress: toAddress || ""
     };
     console.log(
       "Request body:",
