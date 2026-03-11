@@ -1,20 +1,22 @@
 package com.gmail.agent.service;
 
-import com.gmail.agent.entity.Gmail;
-import lombok.extern.slf4j.Slf4j;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.List;
+import com.gmail.agent.entity.Gmail;
+
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Slf4j
 public class GmailService {
     private final ChatClient chatClient;
-    private final int MAX_INPUT_CHARS = 4000;
+    private final int MAX_INPUT_CHARS = 4000; 
 
     public GmailService(ChatClient.Builder builder) {
         // prompt guarding
@@ -125,6 +127,16 @@ public class GmailService {
 
         log.info("Generating '{}' style summary for the email with subject: {}", style, gmail.getSubject());
 
+        // enforce input size cap
+        String rawContent = gmail.getContent();
+        String contentToUse;
+        if (rawContent.length() > MAX_INPUT_CHARS) {
+            log.warn("Content too long for generateSummary ({} chars); truncating to {}", rawContent.length(), MAX_INPUT_CHARS);
+            contentToUse = rawContent.substring(0, MAX_INPUT_CHARS);
+        } else {
+            contentToUse = rawContent;
+        }
+
         String summary = "";
         try {
             long startTime = System.currentTimeMillis();
@@ -134,7 +146,7 @@ public class GmailService {
                         u.text(template);
                         u.params(Map.of(
                                 "subject", gmail.getSubject(),
-                                "content", gmail.getContent(),
+                                "content", contentToUse,
                                 "style", style
                         ));
                     })

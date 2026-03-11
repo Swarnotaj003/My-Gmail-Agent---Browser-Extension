@@ -108,6 +108,14 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Scrollable area used in inbox context so tools panel doesn't grow indefinitely */
+.myga-scrollable-content {
+  flex: 1 1 auto;            /* fill available vertical space */
+  min-height: 0;            /* allow flex child to shrink and overflow */
+  overflow-y: auto;         /* enable scrolling when content is tall */
+  padding-right: 4px;        /* avoid cutting off scrollbar content */
+}
+
 /* Header */
 .myga-header {
   display: flex;

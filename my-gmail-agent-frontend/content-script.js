@@ -565,13 +565,34 @@
 
   // Extract full thread text for summarization
   function extractThreadText() {
-    // Gmail renders message bodies inside elements with class .a3s
-    const bodies = Array.from(document.querySelectorAll('.a3s'))
-      .map(div => (div.innerText || "").trim())
-      .filter(Boolean);
+    try {
+      // Gmail's main content area often contains the entire thread
+      const emailBody = document.querySelector('[role="main"]');
+      if (!emailBody) {
+        console.warn("extractThreadText: main content area not found");
+        return "";
+      }
 
-    const fullText = bodies.join("\n\n").trim();
-    return fullText;
+      // First attempt: grab each message body container (.a3s)
+      let bodies = Array.from(emailBody.querySelectorAll('.a3s'))
+        .map(div => (div.innerText || div.textContent || "").trim())
+        .filter(Boolean);
+
+      let fullText = bodies.join("\n\n").trim();
+
+      // Fallback: if the .a3s selection is empty or seems much shorter than
+      // the entire main area, use the larger blob. This catches hidden/
+      // quoted replies and long threads that Gmail collapses.
+      const fallback = (emailBody.innerText || emailBody.textContent || "").trim();
+      if (!fullText || fallback.length > fullText.length * 1.2) {
+        fullText = fallback;
+      }
+
+      return fullText;
+    } catch (err) {
+      console.error("Error in extractThreadText:", err);
+      return "";
+    }
   }
 
   // Call background to summarize (avoids CORS)
@@ -663,6 +684,7 @@
       showStatusMessage("Collecting thread content...", "info");
 
       const text = extractThreadText();
+      console.log("Extracted thread text length:", text.length, "chars");
       if (!text) {
         showStatusMessage("No email content found in this thread.", "error");
         return;
