@@ -8,5 +8,6 @@ public class Gmail {
     private String toAddress;
     private String subject;
     private String content;
+    private String messageId;
 
 }

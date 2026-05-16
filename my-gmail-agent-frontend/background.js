@@ -12,12 +12,14 @@ async function handleApiError(response, customErrorMsg400 = "400 - Invalid reque
 
   if (status === 429) {
     throw new Error("429 - API rate limit exceeded. Please try again later.");
+  } else if (status === 403) {
+    throw new Error("403 - CORS Error: Backend does not allow requests from the extension. Make sure the backend CORS is properly configured.");
   } else if (status === 503) {
     throw new Error("503 - AI service is temporarily unavailable. Please try again later.");
   } else if (status === 400) {
     throw new Error(customErrorMsg400);
   } else if (status === 500) {
-    throw new Error("500 - Server error. Please try again later.");
+    throw new Error(`500 - Server error. ${errorText || 'Please try again later.'}`);
   } else {
     throw new Error(`${status} - API error: ${errorText}`);
   }
@@ -73,6 +75,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // respond asynchronously
   }
 });
+
+// Handler for priority analysis
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "analyzePriority") {
+    analyzePriority(request.emailData)
+      .then((result) => {
+        console.log("Priority analyzed successfully");
+        sendResponse({ success: true, result });
+      })
+      .catch((error) => {
+        console.error("Error analyzing priority:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Will respond asynchronously
+  }
+});
+
+// Handler for priority dashboard
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "getPriorityDashboard") {
+    // If emails are provided, send them to backend for dashboard analysis
+    if (request.emails && Array.isArray(request.emails) && request.emails.length > 0) {
+      getPriorityDashboardForSelectedEmails(request.emails)
+        .then((dashboard) => {
+          console.log("Priority dashboard (selected emails) retrieved successfully");
+          sendResponse({ success: true, dashboard });
+        })
+        .catch((error) => {
+          console.error("Error getting priority dashboard for selected emails:", error);
+          sendResponse({ success: false, error: error.message });
+        });
+    } else {
+      // fallback: original behavior (all emails)
+      getPriorityDashboard()
+        .then((dashboard) => {
+          console.log("Priority dashboard retrieved successfully");
+          sendResponse({ success: true, dashboard });
+        })
+        .catch((error) => {
+          console.error("Error getting priority dashboard:", error);
+          sendResponse({ success: false, error: error.message });
+        });
+    }
+    return true; // Will respond asynchronously
+  }
+});
+
+// New: POST selected emails to backend for dashboard analysis
+async function getPriorityDashboardForSelectedEmails(emails) {
+  try {
+    console.log("Starting priority dashboard request for selected emails...");
+    console.log("Base URL:", BASE_URL);
+    const url = `${BASE_URL}/priority-dashboard`;
+    console.log("Full URL:", url);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ emails }),
+    });
+
+    console.log("API Response received");
+    console.log("Response status:", response.status);
+    console.log("Response status text:", response.statusText);
+
+    if (!response.ok) {
+      await handleApiError(response, "400 - Unable to retrieve priority dashboard for selected emails.");
+    }
+
+    const dashboard = await response.json();
+    console.log("Priority dashboard (selected emails) received:", dashboard);
+    return dashboard;
+  } catch (error) {
+    console.error("Background priority dashboard (selected emails) error:", error.message);
+    console.error("Error type:", error.constructor.name);
+    console.error("Full error:", error);
+    if (error.message === "Failed to fetch") {
+      throw new Error(
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
+      );
+    }
+    throw error;
+  }
+}
 
 
 async function generateReply(emailData, tone) {
@@ -223,6 +311,106 @@ async function convertQuery(naturalQuery) {
         `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
       );
     }
+    throw error;
+  }
+}
+
+// Analyze priority via backend
+async function analyzePriority(emailData) {
+  try {
+    console.log("Starting priority analysis...");
+    console.log("Base URL:", BASE_URL);
+    console.log("Email subject length:", emailData.subject.length);
+    console.log("Email content length:", emailData.content.length);
+
+    const url = `${BASE_URL}/priority`;
+    console.log("Full URL:", url);
+
+    const requestBody = {
+      subject: emailData.subject,
+      content: emailData.content,
+      fromAddress: emailData.fromAddress || "",
+      toAddress: emailData.toAddress || "",
+    };
+
+    console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log("API Response received");
+    console.log("Response status:", response.status);
+    console.log("Response status text:", response.statusText);
+
+    if (!response.ok) {
+      await handleApiError(response, "400 - Invalid email content. Please ensure the email has both subject and content.");
+    }
+
+    const result = await response.json();
+    console.log("Priority result received:", result);
+
+    return result;
+  } catch (error) {
+    console.error("Background priority analysis error:", error.message);
+    console.error("Error type:", error.constructor.name);
+    console.error("Full error:", error);
+
+    // Add helpful diagnostic message
+    if (error.message === "Failed to fetch") {
+      throw new Error(
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
+      );
+    }
+
+    throw error;
+  }
+}
+
+// Get priority dashboard via backend
+async function getPriorityDashboard() {
+  try {
+    console.log("Starting priority dashboard request...");
+    console.log("Base URL:", BASE_URL);
+
+    const url = `${BASE_URL}/priority-dashboard`;
+    console.log("Full URL:", url);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      }
+    });
+
+    console.log("API Response received");
+    console.log("Response status:", response.status);
+    console.log("Response status text:", response.statusText);
+
+    if (!response.ok) {
+      await handleApiError(response, "400 - Unable to retrieve priority dashboard.");
+    }
+
+    const dashboard = await response.json();
+    console.log("Priority dashboard received:", dashboard);
+
+    return dashboard;
+  } catch (error) {
+    console.error("Background priority dashboard error:", error.message);
+    console.error("Error type:", error.constructor.name);
+    console.error("Full error:", error);
+
+    // Add helpful diagnostic message
+    if (error.message === "Failed to fetch") {
+      throw new Error(
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
+      );
+    }
+
     throw error;
   }
 }

@@ -52,36 +52,42 @@
 
       // Find subject line
       let subject = "";
-      const subjectElement = emailBody.querySelector('[data-subject]');
+      const subjectElement = document.querySelector('.hP');
       if (subjectElement) {
-        subject = subjectElement.getAttribute('data-subject') || subjectElement.textContent || "";
+        subject = subjectElement.textContent.trim();
       } else {
         // Fallback: look for subject in heading
         const headingElement = emailBody.querySelector('h2');
-        subject = headingElement ? headingElement.textContent : "";
+        subject = headingElement ? headingElement.textContent.trim() : "";
       }
-
-      // ROOT EMAIL CONTAINER
-      const mail = document.querySelector('.adn.ads'); 
-      if (!mail) return;
 
       // FROM (sender)
       let fromAddress = "";
-      const fromEl = mail.querySelector('.gD[email]');
+      const fromEl = document.querySelector('.gD');
       if (fromEl) {
-        fromAddress = fromEl.getAttribute('email');
+        const hovercard = fromEl.getAttribute('data-hovercard-id');
+        if (hovercard && hovercard.includes('#')) {
+          fromAddress = hovercard.split('#')[1];
+        } else {
+          fromAddress = fromEl.textContent.trim();
+        }
       }
 
       // TO recipients
       let toAddress = [];
-      const toEls = mail.querySelectorAll('.g2[email]');
+      const toEls = document.querySelectorAll('.g2');
       toEls.forEach(el => {
-        toAddress.push(el.getAttribute('email'));
+        const hovercard = el.getAttribute('data-hovercard-id');
+        if (hovercard && hovercard.includes('#')) {
+          toAddress.push(hovercard.split('#')[1]);
+        } else {
+          toAddress.push(el.textContent.trim());
+        }
       });
 
-      // fallback: search any mailto links
+      // fallback: search any mailto links if no from
       if (!fromAddress) {
-        const mailto = mail.querySelector('a[href^="mailto:"]');
+        const mailto = emailBody.querySelector('a[href^="mailto:"]');
         if (mailto) {
           fromAddress = mailto.href.replace('mailto:', '').trim();
         }
@@ -90,15 +96,15 @@
       console.log("FROM:", fromAddress);
       console.log("TO:", toAddress);
 
-
-      // Find email content - Gmail stores message content in specific containers
+      // Find email content - Gmail stores message content in .a3s containers
       let content = "";
-      const messageBody = emailBody.querySelector('[data-message-id]') || emailBody.querySelector('.aO.T-I-J3');
-      if (messageBody) {
-        content = messageBody.textContent || messageBody.innerText || "";
+      const contentEls = document.querySelectorAll('.a3s');
+      if (contentEls.length > 0) {
+        // Get the most recent message content (last in thread)
+        content = contentEls[contentEls.length - 1].textContent.trim();
       } else {
         // Fallback: extract all visible text from main area
-        content = emailBody.innerText || emailBody.textContent || "";
+        content = emailBody.innerText.trim();
       }
 
       // Clean up content
@@ -406,6 +412,23 @@
               🔍 Search
             </button>
           </section>
+
+          <section class="myga-section">
+            <h2 class="myga-section-title">Analyze priority</h2>
+            <p class="myga-section-desc">
+              Determine if an email requires action and what to do.
+            </p>
+            <div class="myga-field-group">
+              <label class="myga-label">Priority analysis mode</label>
+              <div class="myga-chip-row" id="myga-priority-mode-selector">
+                <button class="myga-chip myga-chip--selected" type="button" data-mode="single">Single Mail</button>
+                <button class="myga-chip" type="button" data-mode="dashboard">Smart Dashboard</button>
+              </div>
+            </div>
+            <button class="myga-primary-button" type="button" id="myga-analyze-priority-button">
+              Analyze priority
+            </button>
+          </section>
           </div>
         </div>
       `;
@@ -434,6 +457,13 @@
         target.classList.add("myga-chip--selected");
       }
 
+      // Handle priority mode selection
+      if (target.classList.contains("myga-chip") && target.dataset.mode) {
+        const modeButtons = sidebar.querySelectorAll("#myga-priority-mode-selector .myga-chip");
+        modeButtons.forEach((btn) => btn.classList.remove("myga-chip--selected"));
+        target.classList.add("myga-chip--selected");
+      }
+
       // Handle generate reply button
       if (target.id === "myga-generate-button") {
         handleGenerateReply();
@@ -442,6 +472,11 @@
       // Handle summarize thread button
       if (target.id === "myga-summarize-button") {
         handleSummarizeThread();
+      }
+
+      // Handle analyze priority button
+      if (target.id === "myga-analyze-priority-button") {
+        handleAnalyzePriority();
       }
 
       // Handle smart search button
@@ -720,6 +755,477 @@
     }
   }
 
+  // Call background to analyze priority
+  async function callAnalyzePriorityAPI(emailData) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: "analyzePriority",
+        emailData: emailData
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response.success) {
+          resolve(response.result);
+        } else {
+          reject(new Error(response.error));
+        }
+      });
+    });
+  }
+
+  // Call background to get priority dashboard
+  async function callPriorityDashboardAPI() {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        action: "getPriorityDashboard"
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response.success) {
+          resolve(response.dashboard);
+        } else {
+          reject(new Error(response.error));
+        }
+      });
+    });
+  }
+
+  
+  // Render priority analysis in a floating box
+  function showPriorityOutput(result) {
+    const existingBox = document.getElementById('priority-output-box');
+    if (existingBox) existingBox.remove();
+
+    const outputBox = document.createElement('div');
+    outputBox.id = 'priority-output-box';
+    outputBox.className = 'myga-summary-box';
+
+    outputBox.style.position = 'fixed';
+    outputBox.style.bottom = '20px';
+    outputBox.style.right = '20px';
+    outputBox.style.background = '#fff';
+    outputBox.style.border = '1px solid #ccc';
+    outputBox.style.padding = '12px';
+    outputBox.style.zIndex = '2147483642';
+    outputBox.style.maxWidth = '420px';
+    outputBox.style.maxHeight = '50vh';
+    outputBox.style.overflow = 'auto';
+    outputBox.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
+    outputBox.style.fontSize = '13px';
+    outputBox.style.lineHeight = '1.4';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '600';
+    title.style.marginBottom = '8px';
+    title.textContent = 'Priority Analysis';
+
+    const content = document.createElement('div');
+    const reasonHTML = result.actionDecision === 'ACTION_REQUIRED' ? '' : `<br><strong>Reason:</strong> ${result.reason}`;
+    content.innerHTML = `
+      <strong>Action:</strong> ${result.actionDecision}<br>
+      <strong>Action Item:</strong> ${result.actionItem}<br>
+      <strong>Deadline:</strong> ${result.deadline}${reasonHTML}
+    `;
+
+    const close = document.createElement('button');
+    close.textContent = 'Close';
+    close.style.marginTop = '10px';
+    close.style.background = '#f1f3f4';
+    close.style.border = '1px solid #dadce0';
+    close.style.padding = '6px 10px';
+    close.style.borderRadius = '4px';
+    close.style.cursor = 'pointer';
+    close.addEventListener('click', () => outputBox.remove());
+
+    outputBox.appendChild(title);
+    outputBox.appendChild(content);
+    outputBox.appendChild(close);
+
+    document.body.appendChild(outputBox);
+  }
+
+  // Display smart priority dashboard
+  function showPriorityDashboard(dashboard) {
+    const existingBox = document.getElementById('priority-dashboard-box');
+    if (existingBox) existingBox.remove();
+
+    const outputBox = document.createElement('div');
+    outputBox.id = 'priority-dashboard-box';
+    outputBox.className = 'myga-summary-box';
+
+    outputBox.style.position = 'fixed';
+    outputBox.style.bottom = '20px';
+    outputBox.style.right = '20px';
+    outputBox.style.background = '#fff';
+    outputBox.style.border = '1px solid #ccc';
+    outputBox.style.padding = '12px';
+    outputBox.style.zIndex = '2147483642';
+    outputBox.style.maxWidth = '500px';
+    outputBox.style.maxHeight = '70vh';
+    outputBox.style.overflow = 'auto';
+    outputBox.style.boxShadow = '0 2px 6px rgba(0,0,0,0.2)';
+    outputBox.style.fontSize = '13px';
+    outputBox.style.lineHeight = '1.5';
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '600';
+    title.style.marginBottom = '8px';
+    title.style.fontSize = '14px';
+    title.textContent = `📊 Smart Priority Dashboard`;
+
+    const summary = document.createElement('div');
+    summary.style.marginBottom = '12px';
+    summary.style.padding = '8px';
+    summary.style.background = '#f0f4f8';
+    summary.style.borderRadius = '4px';
+    summary.innerHTML = `<strong>High Priority Emails Found:</strong> ${dashboard.totalHighPriorityCount}`;
+
+    const content = document.createElement('div');
+    content.style.maxHeight = '55vh';
+    content.style.overflow = 'auto';
+
+    if (dashboard.highPriorityEmails && dashboard.highPriorityEmails.length > 0) {
+      const emailList = document.createElement('div');
+      
+      dashboard.highPriorityEmails.forEach((email, index) => {
+        const emailItem = document.createElement('div');
+        emailItem.style.marginBottom = '10px';
+        emailItem.style.padding = '8px';
+        emailItem.style.border = '1px solid #e0e0e0';
+        emailItem.style.borderRadius = '4px';
+        emailItem.style.cursor = 'pointer';
+        emailItem.style.transition = 'background-color 0.2s';
+        
+        emailItem.addEventListener('mouseover', () => {
+          emailItem.style.backgroundColor = '#f5f5f5';
+        });
+        emailItem.addEventListener('mouseout', () => {
+          emailItem.style.backgroundColor = 'transparent';
+        });
+
+        const reasonSection = email.actionDecision === 'ACTION_REQUIRED' ? '' : `
+          <div style="font-size: 12px; color: #555; padding-top: 4px; border-top: 1px solid #eee;">
+            <strong>Reason:</strong> ${email.reason}
+          </div>`;
+        emailItem.innerHTML = `
+          <div style="font-weight: 600; margin-bottom: 4px; color: #c5221f;">⚠️ ${email.subject}</div>
+          <div style="font-size: 12px; color: #666; margin-bottom: 4px;">From: ${email.fromAddress}</div>
+          <div style="font-size: 12px; margin-bottom: 4px;">
+            <strong>Action:</strong> ${email.actionDecision}<br>
+            <strong>Item:</strong> ${email.actionItem}<br>
+            <strong>Deadline:</strong> ${email.deadline}
+          </div>${reasonSection}
+        `;
+
+        emailList.appendChild(emailItem);
+      });
+
+      content.appendChild(emailList);
+    } else {
+      const noEmails = document.createElement('div');
+      noEmails.style.padding = '20px';
+      noEmails.style.textAlign = 'center';
+      noEmails.style.color = '#666';
+      noEmails.innerHTML = '<p>✓ No high-priority emails at this time. Great job!</p>';
+      content.appendChild(noEmails);
+    }
+
+    const close = document.createElement('button');
+    close.textContent = 'Close';
+    close.style.marginTop = '10px';
+    close.style.background = '#f1f3f4';
+    close.style.border = '1px solid #dadce0';
+    close.style.padding = '6px 10px';
+    close.style.borderRadius = '4px';
+    close.style.cursor = 'pointer';
+    close.style.width = '100%';
+    close.addEventListener('click', () => outputBox.remove());
+
+    outputBox.appendChild(title);
+    outputBox.appendChild(summary);
+    outputBox.appendChild(content);
+    outputBox.appendChild(close);
+
+    document.body.appendChild(outputBox);
+  }
+
+  // Handler for analyze priority action
+  async function handleAnalyzePriority() {
+    try {
+      // Get selected priority mode
+      const selectedModeButton = document.querySelector("#myga-priority-mode-selector .myga-chip--selected");
+      const mode = selectedModeButton ? selectedModeButton.dataset.mode : "single";
+
+      if (mode === "dashboard") {
+        handleSmartPriorityDashboard();
+      } else {
+        handleSingleMailPriority();
+      }
+    } catch (error) {
+      console.error("Handle priority mode error:", error);
+      showStatusMessage("Error selecting priority mode", "error");
+    }
+  }
+
+  // Single mail priority analysis with validation
+  async function handleSingleMailPriority() {
+    try {
+      showStatusMessage("Analyzing single email priority...", "info");
+
+      let emailData;
+      const context = detectContext();
+
+      if (context === "thread") {
+        emailData = extractEmailContent();
+      } else {
+        emailData = extractEmailFromInboxPreview();
+      }
+
+      if (!emailData || !emailData.subject || !emailData.content) {
+        showStatusMessage("Unable to extract email content. Please open the email thread or select a single email row in the inbox.", "error");
+        return;
+      }
+
+      const result = await callAnalyzePriorityAPI(emailData);
+
+      showPriorityOutput(result);
+      showStatusMessage("✓ Priority analyzed!", "success");
+
+    } catch (error) {
+      console.error("Single mail priority error:", error);
+      
+      // Handle specific error for multiple selections
+      if (error.message === "MULTIPLE_EMAILS_SELECTED") {
+        showStatusMessage("❌ You have not selected one mail. Please select exactly ONE email for single mail analysis.", "error");
+        return;
+      }
+
+      let errorMessage = error.message;
+
+      if (error.message.includes("Failed to connect")) {
+        errorMessage = "Backend server is not running. Please start the backend at http://localhost:8080";
+      }
+
+      showStatusMessage(`Error: ${errorMessage}`, "error");
+    }
+  }
+
+  // Smart priority dashboard mode
+  // Extract all selected emails from inbox (for dashboard mode)
+  function extractAllSelectedEmailsFromInbox() {
+    const checkedBoxes = document.querySelectorAll('input[type="checkbox"]:checked, [role="checkbox"][aria-checked="true"]');
+    const emails = [];
+    checkedBoxes.forEach((checked) => {
+      let row = checked.closest('tr');
+      if (!row) row = checked.closest('.zA');
+      if (!row) row = checked.closest('[role="row"]');
+      if (!row) row = checked.closest('.zE');
+      if (!row) return;
+
+      // Subject
+      let subject = "";
+      const subjectSelectors = ['.bog', '.y6', 'span.zF', '.zF'];
+      for (const sel of subjectSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          subject = (el.innerText || el.textContent || "").trim();
+          if (subject && subject.length > 0) break;
+        }
+      }
+
+      // Sender
+      let fromAddress = "";
+      const senderSelectors = ['.yX span', '.yW span', '.yP', '.gD'];
+      for (const sel of senderSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          fromAddress = (el.innerText || el.textContent || "").trim();
+          if (fromAddress && fromAddress.length > 0) break;
+        }
+      }
+
+      // Content/preview
+      let content = "";
+      const contentSelectors = ['.y2', '.bqe', '[data-snippet]'];
+      for (const sel of contentSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          content = (el.innerText || el.textContent || "").trim();
+          if (content && content.length > 0) break;
+        }
+      }
+      if (!content) content = (row.innerText || row.textContent || "").trim();
+      if (!subject) subject = "Email";
+      if (!content) content = "No content available";
+
+      emails.push({
+        subject: subject.substring(0, 200),
+        content: content.substring(0, 2000),
+        fromAddress: fromAddress.substring(0, 100),
+        toAddress: ""
+      });
+    });
+    return emails;
+  }
+
+  // Updated Smart priority dashboard mode
+  async function handleSmartPriorityDashboard() {
+    try {
+      showStatusMessage("Analyzing selected emails for high-priority...", "info");
+
+      // Extract all selected emails
+      const selectedEmails = extractAllSelectedEmailsFromInbox();
+      if (selectedEmails.length > 5) {
+        showStatusMessage("Maximum 5 emails can be selected for priority analysis on the free tier.", "error");
+        return;
+      }
+      if (!selectedEmails || selectedEmails.length === 0) {
+        showStatusMessage("❌ Please select one or more emails in the inbox to analyze.", "error");
+        return;
+      }
+
+      // Send selected emails to backend for dashboard analysis
+      const dashboard = await new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+          action: "getPriorityDashboard",
+          emails: selectedEmails
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else if (response.success) {
+            resolve(response.dashboard);
+          } else {
+            reject(new Error(response.error));
+          }
+        });
+      });
+
+      showPriorityDashboard(dashboard);
+      showStatusMessage("✓ Smart priority dashboard loaded!", "success");
+
+    } catch (error) {
+      console.error("Smart priority dashboard error:", error);
+      let errorMessage = error.message;
+
+      if (error.message.includes("Failed to connect")) {
+        errorMessage = "Backend server is not running. Please start the backend at http://localhost:8080";
+      }
+
+      showStatusMessage('Error: ' + errorMessage, 'error');
+    }
+  }
+
+  // Extract email content from inbox preview/selected email row
+  function extractEmailFromInboxPreview() {
+    try {
+      console.log("=== Starting inbox email extraction ===");
+      
+      // Find all checked checkboxes
+      const allChecked = document.querySelectorAll('input[type="checkbox"]:checked, [role="checkbox"][aria-checked="true"]');
+      console.log("Total checked checkboxes:", allChecked.length);
+      
+      if (allChecked.length === 0) {
+        console.warn("No checked checkbox found");
+        return null;
+      }
+
+      if (allChecked.length > 1) {
+        console.warn("Multiple emails checked. Please select only ONE email. Found:", allChecked.length);
+        throw new Error("MULTIPLE_EMAILS_SELECTED");
+      }
+
+      const checked = allChecked[0];
+      console.log("✓ Found single checked email");
+
+      // Find parent row using multiple selectors
+      let row = checked.closest('tr');
+      if (!row) row = checked.closest('.zA');
+      if (!row) row = checked.closest('[role="row"]');
+      if (!row) row = checked.closest('.zE');
+      if (!row) {
+        console.warn("Could not find parent row for checked email");
+        return null;
+      }
+
+      console.log("✓ Found parent row, class:", row.className);
+
+      // Try multiple selectors for subject
+      let subject = "";
+      const subjectSelectors = ['.bog', '.y6', 'span.zF', '.zF'];
+      for (const sel of subjectSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          subject = (el.innerText || el.textContent || "").trim();
+          if (subject && subject.length > 0) {
+            console.log('✓ Found subject via ' + sel);
+            break;
+          }
+        }
+      }
+
+      // Try multiple selectors for sender
+      let fromAddress = "";
+      const senderSelectors = ['.yX span', '.yW span', '.yP', '.gD'];
+      for (const sel of senderSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          fromAddress = (el.innerText || el.textContent || "").trim();
+          if (fromAddress && fromAddress.length > 0) {
+            console.log('✓ Found sender via ' + sel);
+            break;
+          }
+        }
+      }
+
+      // Try multiple selectors for content/preview
+      let content = "";
+      const contentSelectors = ['.y2', '.bqe', '[data-snippet]'];
+      for (const sel of contentSelectors) {
+        const el = row.querySelector(sel);
+        if (el) {
+          content = (el.innerText || el.textContent || "").trim();
+          if (content && content.length > 0) {
+            console.log('✓ Found content via ' + sel);
+            break;
+          }
+        }
+      }
+
+      // Fallback: use all row text as content if nothing found
+      if (!content) {
+        content = (row.innerText || row.textContent || "").trim();
+        if (content) {
+          console.log("✓ Using fallback row text as content");
+        }
+      }
+
+      // Ensure we have at least some content
+      if (!subject) subject = "Email";
+      if (!content) content = "No content available";
+
+      console.log("Extraction complete:", {
+        subject: subject.substring(0, 40),
+        hasContent: content.length > 0,
+        contentLength: content.length,
+        sender: fromAddress.substring(0, 30)
+      });
+
+      return {
+        subject: subject.substring(0, 200),
+        content: content.substring(0, 2000),
+        fromAddress: fromAddress.substring(0, 100),
+        toAddress: ""
+      };
+    } catch (error) {
+      console.error("Error extracting email from inbox preview:", error);
+      // Re-throw specific validation errors
+      if (error.message === "MULTIPLE_EMAILS_SELECTED") {
+        throw error;
+      }
+      return null;
+    }
+  }
+
   // ===== Smart Search Feature =====
 
   // Handler for smart search
@@ -768,7 +1274,7 @@
       searchButton.textContent = "🔍 Search";
     } catch (error) {
       console.error("Smart search error:", error);
-      showStatusMessage(`Error: ${error.message}`, "error");
+      showStatusMessage('Error: ' + error.message, 'error');
       const searchButton = document.getElementById("myga-search-button");
       searchButton.disabled = false;
       searchButton.textContent = "🔍 Search";
@@ -810,7 +1316,7 @@
     // Gmail search syntax: Use the search box
     // We'll navigate to Gmail's search page with the query
     const encodedQuery = encodeURIComponent(query);
-    const searchUrl = `https://mail.google.com/mail/u/0/#search/${encodedQuery}`;
+    const searchUrl = 'https://mail.google.com/mail/u/0/#search/' + encodedQuery;
     
     // Open search in current window or new tab
     window.location.href = searchUrl;
@@ -827,7 +1333,7 @@
       const original = sessionStorage.getItem('myga_original_query');
       if (!converted) return;
 
-      showStatusMessage(`✓ Search applied! Query: ${original}`, 'success');
+      showStatusMessage('✓ Search applied! Query: ' + original, 'success');
 
       // Clean up stored queries
       try {
@@ -876,4 +1382,4 @@
   observer.observe(document, { subtree: true, childList: true });
   window.addEventListener("load", initWhenGmailReady);
   initWhenGmailReady();
-})();
+})(); 
