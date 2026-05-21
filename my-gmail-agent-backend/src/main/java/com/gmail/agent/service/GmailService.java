@@ -223,4 +223,95 @@ public class GmailService {
         return standardQuery;
     }
 
+    public String analyzePriority(Gmail gmail) {
+        if (!validateMailInput(gmail)) {
+            log.warn("analyzePriority() called with invalid input: Gmail object is null or empty subject/content!");
+            throw new IllegalArgumentException("Subject & content cannot be null or empty");
+        }
+
+        String template = """
+            You are an intelligent Email Productivity Assistant.
+
+            Analyse the email given below and extract:
+            1. Whether any important action is required?
+            2. What are the action items?
+            3. The date of action or deadline (normalized to DD/MM/YYYY format)
+            4. The reason only if no action is required (e.g., promotional, social, newsletter, spam mail etc.)
+
+            IMPORTANT RULES:
+            - Use reference timestamp: {currentTime}
+            - Normalize all dates including relative dates such as "within 3 days", "tomorrow", "end of this week", "next Monday", etc.
+            - Do NOT invent action items or deadlines.
+            - Return output in the desired text format as shown in the examples without any verbose text.
+            - If ACTION REQUIRED, provide actionItems in short and deadline.
+            - If NO ACTION REQUIRED, provide a short reason.
+
+            Example input 1:
+                Subject: Project Agreement
+
+                Send a brief report by the end of this week.
+
+                On Sat, Apr 25, 2026 at 6:40 PM John Doe wrote:
+                Hey Billy,
+                I'm willing to work on your project.
+                Please respond to this survey within 3 days.
+                Form link: link
+
+                Best wishes
+                John Doe
+
+            Example output 1:
+                ACTION(S) REQUIRED
+                i) Send report - 26/04/2026
+                ii) Respond to survey - 28/04/2026
+
+            Example input 2:
+                Subject: Weekend Sale - Flat 70%% Off on Fashion!
+
+                Hi there,
+                This weekend only! Get amazing discounts on clothing, shoes, and accessories.
+                Offer valid till Sunday. Shop now and save big!
+
+                Cheers,
+                Fashion Store Team
+
+            Example output 2:
+                NO ACTION REQUIRED
+                Promotional email for fashion sales
+
+            Now analyze this email:
+            Subject: {subject}
+            Content: {content}
+        """;
+
+        log.info("Analyzing priority/actions for the email with subject: {}", gmail.getSubject());
+
+        try {
+            long startTime = System.currentTimeMillis();
+
+            String response = chatClient.prompt()
+                    .user(u -> {
+                        u.text(template);
+                        u.params(Map.of(
+                                "subject", gmail.getSubject(),
+                                "content", gmail.getContent(),
+                                "currentTime", LocalDateTime.now()
+                        ));
+                    })
+                    .call()
+                    .content();
+
+            String analysis = response != null ? response.trim() : "NO ACTION REQUIRED \nUnable to determine";
+            long duration = System.currentTimeMillis() - startTime;
+
+            log.info("Priority analysis completed successfully!");
+            log.info("Analysis length: {}chars, Time taken: {} ms", analysis.length(), duration);
+
+            return analysis;
+        } catch (Exception e) {
+            log.warn("Error in analyzing priority! Message: {}", e.getMessage());
+            throw e;
+        }
+    }
+
 }

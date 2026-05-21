@@ -406,6 +406,15 @@
               🔍 Search
             </button>
           </section>
+          <section class="myga-section">
+            <h2 class="myga-section-title">Priority analysis</h2>
+            <p class="myga-section-desc">
+              Analyze the importance and urgency of a single email directly from your inbox.
+            </p>
+            <button class="myga-primary-button" type="button" id="myga-priority-button">
+              Analyze priority
+            </button>
+          </section>
           </div>
         </div>
       `;
@@ -447,6 +456,11 @@
       // Handle smart search button
       if (target.id === "myga-search-button") {
         handleSmartSearch();
+      }
+
+      // Handle priority analysis button
+      if (target.id === "myga-priority-button") {
+        handlePriorityAnalysis();
       }
 
       // Handle search clear button
@@ -803,6 +817,235 @@
         reject(error);
       }
     });
+  }
+
+  // ===== Priority Analysis Feature =====
+
+  // Call background to perform priority analysis
+  function callPriorityAnalysisAPI(emailData) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (typeof chrome === 'undefined' || !chrome.runtime) {
+          reject(new Error("Chrome runtime is not available. Extension may not be properly initialized."));
+          return;
+        }
+
+        chrome.runtime.sendMessage(
+          { action: "analyzePriority", emailData: emailData },
+          (response) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            if (!response) {
+              reject(new Error("No response from background script."));
+              return;
+            }
+            if (response.success) {
+              resolve(response.analysis);
+            } else {
+              reject(new Error(response.error || "Unknown error from background script."));
+            }
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+// Extract email metadata from a selected inbox row (no thread open needed)
+function extractEmailFromInboxRow() {
+  try {
+    // Gmail marks the focused/selected row with aria-selected="true" or .x7 active class
+    const selectedRow =
+      document.querySelector('tr.zA[aria-selected="true"]') ||
+      document.querySelector('tr.zA.x7') ||           // keyboard-focused row
+      document.querySelector('tr.zA.zE');             // unread & last-clicked row
+
+    if (!selectedRow) {
+      console.warn("extractEmailFromInboxRow: no selected row found");
+      return null;
+    }
+
+    // Subject — Gmail puts it in .y6 > span or span[data-thread-id] sibling
+    const subjectEl =
+      selectedRow.querySelector('.y6 span[id]') ||
+      selectedRow.querySelector('.y6') ||
+      selectedRow.querySelector('span.bog');
+    const subject = subjectEl ? subjectEl.textContent.trim() : "";
+
+    // Sender name/email — .yW span[email] or .zF[email]
+    const senderEl =
+      selectedRow.querySelector('span[email]') ||
+      selectedRow.querySelector('.yW span');
+    const fromAddress = senderEl
+      ? (senderEl.getAttribute('email') || senderEl.textContent).trim()
+      : "";
+
+    // Snippet — Gmail puts the preview text in .y2
+    const snippetEl = selectedRow.querySelector('.y2');
+    const content = snippetEl ? snippetEl.textContent.trim() : "";
+
+    if (!subject && !content) {
+      console.warn("extractEmailFromInboxRow: subject and content both empty");
+      return null;
+    }
+
+    console.log("Inbox row extracted — subject:", subject, "from:", fromAddress);
+    return { subject, content, fromAddress, toAddress: "" };
+  } catch (err) {
+    console.error("extractEmailFromInboxRow error:", err);
+    return null;
+  }
+}
+
+  // Handler for priority analysis
+  async function handlePriorityAnalysis() {
+    try {
+      showStatusMessage("Collecting email content...", "info");
+
+      let emailData = extractEmailContent();
+      if (!emailData) {
+        emailData = extractEmailFromInboxRow();
+      }
+      if (!emailData) {
+        showStatusMessage(
+          "Could not extract email content. Click an email row to select it, then try again.",
+          "error"
+        );
+        return;
+      }
+
+      showStatusMessage("Analyzing priority...", "info");
+      const analysis = await callPriorityAnalysisAPI(emailData);
+
+      showStatusMessage("✓ Priority analysis completed.", "success");
+      console.log("Priority analysis result:", analysis);
+
+      // Display result in styled popup
+      const existingBox = document.getElementById("priority-output-box");
+      if (existingBox) existingBox.remove();
+
+      const box = document.createElement("div");
+      box.id = "priority-output-box";
+      box.style.position = "fixed";
+      box.style.bottom = "20px";
+      box.style.right = "20px";
+      box.style.background = "#fff";
+      box.style.border = "1px solid #dadce0";
+      box.style.borderRadius = "10px";
+      box.style.padding = "16px 18px";
+      box.style.zIndex = "2147483642";
+      box.style.width = "300px";
+      box.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+      box.style.fontFamily = "Google Sans, Roboto, Arial, sans-serif";
+      box.style.fontSize = "13px";
+      box.style.lineHeight = "1.6";
+
+      const title = document.createElement("div");
+      title.textContent = "Priority Analysis";
+      title.style.fontWeight = "700";
+      title.style.fontSize = "15px";
+      title.style.marginBottom = "12px";
+      title.style.color = "#202124";
+      box.appendChild(title);
+
+      // Parse backend output format:
+      // Line 1: "ACTION(S) REQUIRED" or "NO ACTION REQUIRED"
+      // Remaining lines: action items like "i) Task - DD/MM/YYYY" or reason text
+      const lines = analysis.split("\n").map(l => l.trim()).filter(Boolean);
+      const statusLine = lines[0] || "";
+      const restLines = lines.slice(1);
+
+      const isActionRequired = statusLine.toUpperCase().includes("ACTION") &&
+                               !statusLine.toUpperCase().includes("NO ACTION");
+
+      // Status badge row
+      const statusRow = document.createElement("div");
+      statusRow.style.marginBottom = "10px";
+      statusRow.style.fontWeight = "700";
+      statusRow.style.fontSize = "13px";
+      statusRow.style.color = isActionRequired ? "#c5221f" : "#137333";
+      statusRow.textContent = statusLine;
+      box.appendChild(statusRow);
+
+      if (isActionRequired) {
+        // Each remaining line is an action item: "i) Task name - DD/MM/YYYY"
+        restLines.forEach(line => {
+          const row = document.createElement("div");
+          row.style.marginBottom = "5px";
+          row.style.color = "#202124";
+
+          // Split on last " - " to separate task from deadline
+          const dashIdx = line.lastIndexOf(" - ");
+          if (dashIdx !== -1) {
+            const task = line.substring(0, dashIdx).trim();
+            const deadline = line.substring(dashIdx + 3).trim();
+
+            const taskSpan = document.createElement("span");
+            taskSpan.textContent = task + " ";
+            taskSpan.style.fontWeight = "600";
+
+            const deadlineSpan = document.createElement("span");
+            deadlineSpan.textContent = "– " + deadline;
+            deadlineSpan.style.fontWeight = "400";
+            deadlineSpan.style.color = "#c5221f";
+
+            row.appendChild(taskSpan);
+            row.appendChild(deadlineSpan);
+          } else {
+            row.textContent = line;
+          }
+
+          box.appendChild(row);
+        });
+      } else {
+        // No action required — show "Reason:" label + reason text
+        const reasonRow = document.createElement("div");
+        reasonRow.style.color = "#202124";
+        reasonRow.style.marginBottom = "4px";
+
+        // Strip any "Reason:" or "Reason :" prefix the LLM may have added
+        const rawReason = restLines.join(" ").replace(/^reason\s*:\s*/i, "").trim();
+
+        const reasonLabel = document.createElement("span");
+        reasonLabel.textContent = "Reason: ";
+        reasonLabel.style.fontWeight = "700";
+
+        const reasonValue = document.createElement("span");
+        reasonValue.textContent = rawReason;
+        reasonValue.style.fontStyle = "italic";
+        reasonValue.style.color = "#5f6368";
+
+        reasonRow.appendChild(reasonLabel);
+        reasonRow.appendChild(reasonValue);
+        box.appendChild(reasonRow);
+      }
+
+      const close = document.createElement("button");
+      close.textContent = "Close";
+      close.style.marginTop = "14px";
+      close.style.display = "block";
+      close.style.background = "#f1f3f4";
+      close.style.border = "1px solid #dadce0";
+      close.style.padding = "6px 14px";
+      close.style.borderRadius = "6px";
+      close.style.cursor = "pointer";
+      close.style.fontSize = "13px";
+      close.style.color = "#202124";
+      close.addEventListener("click", () => box.remove());
+      box.appendChild(close);
+
+      document.body.appendChild(box);
+      
+    } catch (error) {
+      console.error("Priority analysis error:", error);
+      let errorMessage = error.message;
+      if (error.message.includes("Failed to connect")) {
+        errorMessage = "Backend server is not running. Please start the backend at http://localhost:8080";
+      }
+      showStatusMessage(`Error: ${errorMessage}`, "error");
+    }
   }
 
   // Perform search in Gmail inbox

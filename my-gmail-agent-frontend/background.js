@@ -74,6 +74,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Handler for priority analysis
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "analyzePriority") {
+    analyzePriority(request.emailData)
+      .then((analysis) => {
+        console.log("Priority analysis generated successfully");
+        sendResponse({ success: true, analysis });
+      })
+      .catch((error) => {
+        console.error("Error generating priority analysis:", error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // respond asynchronously
+  }
+});
+
 
 async function generateReply(emailData, tone) {
   try {
@@ -189,6 +205,61 @@ async function summarizeEmail(emailContent, style, subject, fromAddress, toAddre
     console.error("Full error:", error);
 
     // Add helpful diagnostic message
+    if (error.message === "Failed to fetch") {
+      throw new Error(
+        `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
+      );
+    }
+
+    throw error;
+  }
+}
+
+// Priority analysis via backend
+async function analyzePriority(emailData) {
+  try {
+    console.log("Starting API call for priority analysis...");
+    console.log("Base URL:", BASE_URL);
+    console.log("Email subject length:", emailData.subject.length);
+    console.log("Email content length:", emailData.content.length);
+
+    const url = `${BASE_URL}/priority`;
+    const requestBody = {
+      subject: emailData.subject,
+      content: emailData.content,
+      fromAddress: emailData.fromAddress || "",
+      toAddress: emailData.toAddress || "",
+    };
+
+    console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log("API Response received");
+    console.log("Response status:", response.status);
+    console.log("Response status text:", response.statusText);
+
+    if (!response.ok) {
+      await handleApiError(response, "400 - Invalid email content. Please ensure the email has both subject and content.");
+    }
+
+    const analysis = await response.text();
+    console.log("Priority analysis received, length:", analysis.length);
+
+    if (!analysis) {
+      throw new Error("Received empty priority analysis from API.");
+    }
+
+    return analysis;
+  } catch (error) {
+    console.error("Background API call error (priority analysis):", error.message);
+    console.error("Error type:", error.constructor.name);
+    console.error("Full error:", error);
+
     if (error.message === "Failed to fetch") {
       throw new Error(
         `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
