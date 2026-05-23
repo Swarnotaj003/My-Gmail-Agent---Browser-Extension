@@ -72,6 +72,16 @@
         fromAddress = fromEl.getAttribute('email');
       }
 
+      // SENT DATE — Gmail renders it in .g3 or [data-tooltip] on the timestamp span
+      let sentDate = "";
+      const sentDateEl = mail.querySelector('.g3') || 
+                         mail.querySelector('span.ads [title]') ||
+                         mail.querySelector('.adn .gH .g3');
+      if (sentDateEl) {
+        sentDate = sentDateEl.getAttribute('title') || sentDateEl.textContent.trim();
+      }
+      console.log("SENT DATE:", sentDate);
+
       // TO recipients
       let toAddress = [];
       const toEls = mail.querySelectorAll('.g2[email]');
@@ -114,7 +124,7 @@
 
       console.log("Extracted email addresses - From:", fromAddress, "To:", toAddress);
 
-      return { subject, content, fromAddress, toAddress };
+      return { subject, content, fromAddress, toAddress, sentDate };
     } catch (error) {
       console.error("Error extracting email content:", error);
       return null;
@@ -891,8 +901,16 @@ function extractEmailFromInboxRow() {
       return null;
     }
 
+    // Sent date — Gmail inbox rows show timestamp in .xW span or .apm
+    const sentDateEl = selectedRow.querySelector('.xW span') || 
+                       selectedRow.querySelector('.apm');
+    const sentDate = sentDateEl 
+      ? (sentDateEl.getAttribute('title') || sentDateEl.textContent.trim()) 
+      : "";
+    console.log("Inbox row SENT DATE:", sentDate);
+
     console.log("Inbox row extracted — subject:", subject, "from:", fromAddress);
-    return { subject, content, fromAddress, toAddress: "" };
+    return { subject, content, fromAddress, toAddress: "", sentDate };
   } catch (err) {
     console.error("extractEmailFromInboxRow error:", err);
     return null;

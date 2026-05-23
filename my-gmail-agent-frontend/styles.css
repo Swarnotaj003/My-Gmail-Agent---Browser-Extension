@@ -112,7 +112,7 @@
 .myga-scrollable-content {
   flex: 1 1 auto;            /* fill available vertical space */
   min-height: 0;            /* allow flex child to shrink and overflow */
-  overflow-y: auto;         /* enable scrolling when content is tall */
+  overflow-y: visible;         /* enable scrolling when content is tall */
   padding-right: 4px;        /* avoid cutting off scrollbar content */
 }
 

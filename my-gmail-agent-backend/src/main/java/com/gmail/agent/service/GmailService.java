@@ -1,6 +1,8 @@
 package com.gmail.agent.service;
 
 import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -239,7 +241,8 @@ public class GmailService {
             4. The reason only if no action is required (e.g., promotional, social, newsletter, spam mail etc.)
 
             IMPORTANT RULES:
-            - Use reference timestamp: {currentTime}
+            - Use email sent date: {sentDate} as the anchor for resolving relative dates (e.g., "end of this week" means end of the week in which the email was sent, not the current week)
+            - Normalize all relative dates based on {sentDate}, NOT {currentTime}.
             - Normalize all dates including relative dates such as "within 3 days", "tomorrow", "end of this week", "next Monday", etc.
             - Do NOT invent action items or deadlines.
             - Return output in the desired text format as shown in the examples without any verbose text.
@@ -295,7 +298,8 @@ public class GmailService {
                         u.params(Map.of(
                                 "subject", gmail.getSubject(),
                                 "content", gmail.getContent(),
-                                "currentTime", LocalDateTime.now()
+                                "currentTime", ZonedDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm z")),
+                                "sentDate", gmail.getSentDate() != null ? gmail.getSentDate() : "Unknown"
                         ));
                     })
                     .call()

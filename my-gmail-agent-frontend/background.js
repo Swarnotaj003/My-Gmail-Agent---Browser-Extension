@@ -107,6 +107,7 @@ async function generateReply(emailData, tone) {
       content: emailData.content,
       fromAddress: emailData.fromAddress || "",
       toAddress: emailData.toAddress || "",
+      sentDate: emailData.sentDate || "" // Optional: Include sent date for better context
     };
     
     console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
