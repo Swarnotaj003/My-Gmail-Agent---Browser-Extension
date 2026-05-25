@@ -77,7 +77,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Handler for priority analysis
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "analyzePriority") {
-    analyzePriority(request.emailData)
+    analyzePriority(request.emailData) // emailData can now be object OR array, including sentDate
       .then((analysis) => {
         console.log("Priority analysis generated successfully");
         sendResponse({ success: true, analysis });
@@ -107,7 +107,7 @@ async function generateReply(emailData, tone) {
       content: emailData.content,
       fromAddress: emailData.fromAddress || "",
       toAddress: emailData.toAddress || "",
-      sentDate: emailData.sentDate || "" // Optional: Include sent date for better context
+      sentDate: emailData.sentDate || "" 
     };
     
     console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
@@ -221,16 +221,22 @@ async function analyzePriority(emailData) {
   try {
     console.log("Starting API call for priority analysis...");
     console.log("Base URL:", BASE_URL);
-    console.log("Email subject length:", emailData.subject.length);
-    console.log("Email content length:", emailData.content.length);
+
+    const emailArray = Array.isArray(emailData) ? emailData : [emailData];
+    console.log("Email count:", emailArray.length);
+    emailArray.forEach((email, index) => {
+      console.log(`Email ${index} subject length:`, (email.subject || "").length);
+      console.log(`Email ${index} content length:`, (email.content || "").length);
+    });
 
     const url = `${BASE_URL}/priority`;
-    const requestBody = {
-      subject: emailData.subject,
-      content: emailData.content,
-      fromAddress: emailData.fromAddress || "",
-      toAddress: emailData.toAddress || "",
-    };
+    const requestBody = emailArray.map((email) => ({
+      subject: email.subject,
+      content: email.content,
+      fromAddress: email.fromAddress || "",
+      toAddress: email.toAddress || "",
+      sentDate: email.sentDate || "",
+    }));
 
     console.log("Request body:", JSON.stringify(requestBody).substring(0, 200) + "...");
 
@@ -248,14 +254,14 @@ async function analyzePriority(emailData) {
       await handleApiError(response, "400 - Invalid email content. Please ensure the email has both subject and content.");
     }
 
-    const analysis = await response.text();
-    console.log("Priority analysis received, length:", analysis.length);
+    const analysis = await response.json();
+    console.log("Priority analysis received, count:", Array.isArray(analysis) ? analysis.length : 0);
 
-    if (!analysis) {
+    if (!analysis || (Array.isArray(analysis) && analysis.length === 0)) {
       throw new Error("Received empty priority analysis from API.");
     }
 
-    return analysis;
+    return Array.isArray(emailData) ? analysis : analysis[0];
   } catch (error) {
     console.error("Background API call error (priority analysis):", error.message);
     console.error("Error type:", error.constructor.name);
@@ -266,7 +272,7 @@ async function analyzePriority(emailData) {
         `Failed to connect to backend. Make sure the backend server is running on ${BASE_URL.split('/api')[0]}`
       );
     }
-
+    
     throw error;
   }
 }

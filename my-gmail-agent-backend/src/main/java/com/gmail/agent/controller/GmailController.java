@@ -1,5 +1,7 @@
 package com.gmail.agent.controller;
 
+import java.util.List;
+
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -66,16 +68,16 @@ public class GmailController {
     }
 
     @PostMapping("/priority")
-    public ResponseEntity<String> generatePriority(@RequestBody Gmail gmail) {
+    public ResponseEntity<List<String>> generatePriority(@RequestBody List<Gmail> gmails) {
         try {
-            String priority = gmailService.analyzePriority(gmail);
-            return new ResponseEntity<>(priority, HttpStatus.OK);
+            List<String> priorities = gmailService.analyzePriorityBatch(gmails);
+            return new ResponseEntity<>(priorities, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
+            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         } catch (TransientAiException e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.TOO_MANY_REQUESTS);
+            return new ResponseEntity<>(HttpStatus.TOO_MANY_REQUESTS);
         } catch (Exception e) {
-            return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }

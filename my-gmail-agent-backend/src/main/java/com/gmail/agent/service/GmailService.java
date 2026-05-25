@@ -1,9 +1,8 @@
 package com.gmail.agent.service;
 
 import java.time.LocalDateTime;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 public class GmailService {
     private final ChatClient chatClient;
     private final int MAX_INPUT_CHARS = 4000; 
+    private final int MAX_BATCH_INPUT_CHARS = 25000;
 
     public GmailService(ChatClient.Builder builder) {
         // prompt guarding
@@ -225,35 +225,54 @@ public class GmailService {
         return standardQuery;
     }
 
-    public String analyzePriority(Gmail gmail) {
-        if (!validateMailInput(gmail)) {
-            log.warn("analyzePriority() called with invalid input: Gmail object is null or empty subject/content!");
-            throw new IllegalArgumentException("Subject & content cannot be null or empty");
+    public List<String> analyzePriorityBatch(List<Gmail> emails) {
+        if (emails == null || emails.isEmpty()) {
+            throw new IllegalArgumentException("Email list must not be null or empty");
         }
+
+        for (int i = 0; i < emails.size(); i++) {
+            if (!validateMailInput(emails.get(i))) {
+                log.warn("analyzePriorityBatch() invalid email at index {}: null or empty subject/content", i);
+                throw new IllegalArgumentException("Email at index " + i + " has null or empty subject/content");
+            }
+        }
+
+        String emailList = buildEmailList(emails);
+
+        // enforce batch input size cap
+        if (emailList.length() > MAX_BATCH_INPUT_CHARS) {
+            log.warn("Batch input too long ({} chars); truncating to {} chars", emailList.length(), MAX_BATCH_INPUT_CHARS);
+            emailList = emailList.substring(0, MAX_BATCH_INPUT_CHARS);
+        }
+
+        log.info("Analyzing priority for {} email(s)", emails.size());
 
         String template = """
             You are an intelligent Email Productivity Assistant.
-
-            Analyse the email given below and extract:
+             
+            Analyse EACH email below independently and extract:
             1. Whether any important action is required?
             2. What are the action items?
             3. The date of action or deadline (normalized to DD/MM/YYYY format)
             4. The reason only if no action is required (e.g., promotional, social, newsletter, spam mail etc.)
 
             IMPORTANT RULES:
-            - Use email sent date: {sentDate} as the anchor for resolving relative dates (e.g., "end of this week" means end of the week in which the email was sent, not the current week)
-            - Normalize all relative dates based on {sentDate}, NOT {currentTime}.
-            - Normalize all dates including relative dates such as "within 3 days", "tomorrow", "end of this week", "next Monday", etc.
+            - Treat each email separately.
+            - Normalize all relative dates using the timestamp of each email.
             - Do NOT invent action items or deadlines.
+            - Do not ignore, filter out, or assume any action is irrelevant. Every explicit or implicit task must be extracted.
+            	This includes personal and logistical actions such as attending exams, receiving parcels,
+            	responding to requests, payments, and travel activities like boarding trains or flights.
             - Return output in the desired text format as shown in the examples without any verbose text.
+            - Return output strictly as per email in the same order, each starting with ===EMAIL_<index>=== as shown in example.
             - If ACTION REQUIRED, provide actionItems in short and deadline.
             - If NO ACTION REQUIRED, provide a short reason.
 
-            Example input 1:
+            EXAMPLE INPUT:
+            	===EMAIL_1===
                 Subject: Project Agreement
-
-                Send a brief report by the end of this week.
-
+            	Timestamp: Sat, Apr 25, 6:40 PM
+                Content: Send a brief report by the end of this week.
                 On Sat, Apr 25, 2026 at 6:40 PM John Doe wrote:
                 Hey Billy,
                 I'm willing to work on your project.
@@ -263,59 +282,77 @@ public class GmailService {
                 Best wishes
                 John Doe
 
-            Example output 1:
-                ACTION(S) REQUIRED
-                i) Send report - 26/04/2026
-                ii) Respond to survey - 28/04/2026
-
-            Example input 2:
+            	===EMAIL_2===
                 Subject: Weekend Sale - Flat 70%% Off on Fashion!
-
-                Hi there,
+            	Timestamp: Thu, May 21, 10:45 AM
+                Content: Hi there,
                 This weekend only! Get amazing discounts on clothing, shoes, and accessories.
                 Offer valid till Sunday. Shop now and save big!
-
+                
                 Cheers,
                 Fashion Store Team
+                
+            EXAMPLE OUTPUT:
 
-            Example output 2:
+            	===EMAIL_1===
+            	ACTION(S) REQUIRED
+                i) Send report - 26/04/2026
+                ii) Respond to survey - 28/04/2026
+            	===EMAIL_2===
                 NO ACTION REQUIRED
                 Promotional email for fashion sales
-
-            Now analyze this email:
-            Subject: {subject}
-            Content: {content}
+                
+            Now analyze the given list of emails:
+            {emailList}
         """;
-
-        log.info("Analyzing priority/actions for the email with subject: {}", gmail.getSubject());
 
         try {
             long startTime = System.currentTimeMillis();
 
+            String finalEmailList = emailList;
             String response = chatClient.prompt()
                     .user(u -> {
                         u.text(template);
-                        u.params(Map.of(
-                                "subject", gmail.getSubject(),
-                                "content", gmail.getContent(),
-                                "currentTime", ZonedDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm z")),
-                                "sentDate", gmail.getSentDate() != null ? gmail.getSentDate() : "Unknown"
-                        ));
+                        u.params(Map.of("emailList", finalEmailList));
                     })
                     .call()
                     .content();
 
-            String analysis = response != null ? response.trim() : "NO ACTION REQUIRED \nUnable to determine";
+            String rawResponse = response != null ? response.trim() : "";
             long duration = System.currentTimeMillis() - startTime;
 
-            log.info("Priority analysis completed successfully!");
-            log.info("Analysis length: {}chars, Time taken: {} ms", analysis.length(), duration);
+            log.info("Batch priority analysis completed for {} email(s)", emails.size());
+            log.info("Response length: {} chars, Time taken: {} ms", rawResponse.length(), duration);
 
-            return analysis;
+            return parseEmailResponse(rawResponse);
         } catch (Exception e) {
-            log.warn("Error in analyzing priority! Message: {}", e.getMessage());
+            log.warn("Error in batch priority analysis! Message: {}", e.getMessage());
             throw e;
         }
+    }
+
+    private String buildEmailList(List<Gmail> emails) {
+        if (emails == null || emails.isEmpty()) {
+            return "";
+        }
+        StringBuilder emailListBuilder = new StringBuilder();
+        int index = 1;
+        for (Gmail gmail : emails) {
+            String timestamp = gmail.getSentDate() != null ? gmail.getSentDate() : "Unknown";
+            emailListBuilder.append("===EMAIL_").append(index++).append("===\n");
+            emailListBuilder.append("Subject: ").append(gmail.getSubject() != null ? gmail.getSubject() : "").append("\n");
+            emailListBuilder.append("Timestamp: ").append(timestamp).append("\n");
+            emailListBuilder.append("Content: ").append(gmail.getContent() != null ? gmail.getContent() : "").append("\n\n");
+        }
+        return emailListBuilder.toString().trim();
+    }
+
+    private List<String> parseEmailResponse(String response) {
+        String[] parts = response.split("===EMAIL_\\d+===");
+        return Arrays.stream(parts)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
 }
