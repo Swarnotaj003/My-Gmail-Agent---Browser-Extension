@@ -5,13 +5,7 @@ import java.util.List;
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import com.gmail.agent.entity.Gmail;
 import com.gmail.agent.service.GmailService;
@@ -68,16 +62,16 @@ public class GmailController {
     }
 
     @PostMapping("/priority")
-    public ResponseEntity<List<String>> generatePriority(@RequestBody List<Gmail> gmails) {
+    public ResponseEntity<?> generatePriority(@RequestBody List<Gmail> gmails) {
         try {
             List<String> priorities = gmailService.analyzePriorityBatch(gmails);
             return new ResponseEntity<>(priorities, HttpStatus.OK);
         } catch (IllegalArgumentException e) {
-            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.BAD_REQUEST);
         } catch (TransientAiException e) {
-            return new ResponseEntity<>(HttpStatus.TOO_MANY_REQUESTS);
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.TOO_MANY_REQUESTS);
         } catch (Exception e) {
-            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }

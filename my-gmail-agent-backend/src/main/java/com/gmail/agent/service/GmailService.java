@@ -177,9 +177,9 @@ public class GmailService {
         // Prompt template to generate standard Gmail search query from natural language of user query
         String template = """
             Convert the user query in natural language into a valid Gmail search query.
-            Output ONLY the search query. NO verbose texts.
-            Use the following keywords for Gmail search with proper syntax as appropriate.
+            Output ONLY the search query. NO verbose texts. No markdown. Single-line response only.
             
+            SYNTAX:
             Address filters- from:, to:, cc:, bcc:
             Content filters- subject:, AROUND, AND, OR
             Date filters- after:, before:, older:, newer:, older_than:, newer_than:
@@ -191,8 +191,22 @@ public class GmailService {
             Size filters- size:, larger:, smaller:
             Mailing lists- list:
             
-            Use only those operators that match the user intent. Remove duplicates. Quote names if needed.
-            Normalize the dates given that the current timestamp is: {currentTime}
+            RULES:
+            - Use only the minimum necessary operators required to best match the user intent.
+            - Extract the most important searchable information.
+            - Preserve important keywords literally.
+            - Do NOT paraphrase, synonymize, singularize, or pluralize important search terms.
+            - Use quotes for meaningful multi-word phrases.
+            - Ignore filler words like: my, all, please, search, find, show.
+            - For sender or receiver names, prefer compact email-friendly forms if obvious.   
+            - Normalize dates relative to the current timestamp: {currentTime}     
+            
+            EXAMPLES:
+            - Bill PDFs from Jio => filename:pdf from:jio "Bill"
+            - Emails from Placement Officer => from:placementofficer
+            - Search my offer letters => "Offer Letter"            
+            - Emails from last month (it's May 2026) => after:2026-03-31 before:2026-05-01
+                
             User query: {userQuery}
         """;
 

@@ -389,7 +389,6 @@
           </header>
 
           <div id="myga-status-message" class="myga-status-message" style="display: none;"></div>
-          <div class="myga-scrollable-content">
           <section class="myga-section">
             <h2 class="myga-section-title">Smart search</h2>
             <p class="myga-section-desc">
@@ -422,10 +421,9 @@
               Analyze the importance and urgency of emails directly from your inbox.
             </p>
             <button class="myga-primary-button" type="button" id="myga-priority-button">
-              Analyze email(s)
+              Analyze selected email(s)
             </button>
           </section>
-          </div>
         </div>
       `;
     }
@@ -1125,38 +1123,18 @@
     try {
       showStatusMessage("Collecting email content...", "info");
 
-      // 1. Try selected inbox rows first (supports multi-select via checkboxes)
-      let emails = extractSelectedInboxEmails();
-
-      // 2. If no rows selected, try the currently open thread/email
+      // Require explicit inbox selection for priority analysis
+      const emails = extractSelectedInboxEmails();
       if (!emails || emails.length === 0) {
-        const threadEmail = extractEmailContent();
-        if (threadEmail) {
-          emails = [threadEmail];
-        }
-      }
-
-      // 3. Fall back to all visible inbox emails
-      if (!emails || emails.length === 0) {
-        emails = extractAllInboxEmails();
-      }
-
-      if (!emails || emails.length === 0) {
-        showStatusMessage(
-          "No emails found. Select one or more emails, or make sure you're in the inbox view.",
-          "error"
-        );
+        showStatusMessage("Select atleast one email!", "error");
         return;
       }
 
-      const isSingle = emails.length === 1;
-      showStatusMessage(
-        isSingle ? "Analyzing priority..." : `Analyzing ${emails.length} email(s)...`,
-        "info"
-      );
+      const count = emails.length;
+      showStatusMessage(`Analyzing ${count} selected email(s)...`,"info");
 
-      // Pass single object or array depending on count
-      const analysis = await callPriorityAnalysisAPI(isSingle ? emails[0] : emails);
+      // Always pass an array of selected emails to the API
+      const analysis = await callPriorityAnalysisAPI(emails);
 
       showStatusMessage("✓ Priority analysis completed.", "success");
       console.log("Priority analysis result:", analysis);

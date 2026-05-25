@@ -110,10 +110,13 @@
 
 /* Scrollable area used in inbox context so tools panel doesn't grow indefinitely */
 .myga-scrollable-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--myga-spacing-md);
   flex: 1 1 auto;            /* fill available vertical space */
-  min-height: 0;            /* allow flex child to shrink and overflow */
-  overflow-y: visible;         /* enable scrolling when content is tall */
-  padding-right: 4px;        /* avoid cutting off scrollbar content */
+  min-height: 0;             /* allow flex child to shrink and overflow */
+  overflow-y: auto;          /* enable scrolling when content is tall */
+  padding-right: 4px;         /* avoid cutting off scrollbar content */
 }
 
 /* Header */
